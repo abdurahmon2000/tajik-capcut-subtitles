@@ -277,16 +277,30 @@ def run_capcut_inject(raw_text, progress_cb, done_cb):
             raise FileNotFoundError("Проекты CapCut не найдены на компьютере!")
 
         proj_name = os.path.basename(project_dir)
-        draft_path = os.path.join(project_dir, "draft_content.json")
-        if not os.path.exists(draft_path):
-            draft_path = os.path.join(project_dir, "draft_info.json")
+        candidates = [
+            os.path.join(project_dir, "draft_info.json"),
+            os.path.join(project_dir, "draft_content.json"),
+        ] + glob.glob(os.path.join(project_dir, "Timelines", "*", "draft_info.json")) + glob.glob(os.path.join(project_dir, "Timelines", "*", "draft_content.json"))
+        existing = [p for p in candidates if os.path.exists(p) and os.path.getsize(p) > 100]
+        if not existing:
+            raise FileNotFoundError(f"?? ?????? ???? ????????? ? ??????? CapCut ?{proj_name}?!")
+        # ?? macOS ??????? ???????? draft_info.json (??? ????? ?????? ???????? ????)
+        if sys.platform == "darwin":
+            info_files = [p for p in existing if os.path.basename(p) == "draft_info.json"]
+            draft_path = max(info_files or existing, key=os.path.getmtime)
+        else:
+            draft_path = max(existing, key=os.path.getmtime)
+
         shutil.copy2(draft_path, draft_path + ".bak")
 
         with open(draft_path, "r", encoding="utf-8") as f:
             draft = json.load(f)
 
         texts_list = draft.get("materials", {}).get("texts", [])
-        native_sub = next((t for t in texts_list if t.get("recognize_task_id")), None)
+        native_sub = next(
+            (t for t in texts_list if t.get("recognize_task_id") or t.get("type") == "subtitle" or t.get("recognize_type")),
+            texts_list[0] if texts_list else None
+        )
         if not native_sub:
             raise RuntimeError(
                 f"В последнем проекте CapCut («{proj_name}») не найдена заготовка автосубтитров!\n\n"
